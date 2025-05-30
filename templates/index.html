@@ -3,139 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Python App Deployer</title>
+    <title>Python App Deployer (Local Docker)</title>
     <style>
         body { font-family: sans-serif; margin: 20px; }
-        #message { margin-top: 20px; padding: 10px; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; white-space: pre-wrap; background-color: #f9f9f9; }
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            max-height: 250px; /* Increased max-height slightly */
+            overflow-y: auto;
+            white-space: pre-wrap;
+            background-color: #f9f9f9;
+            line-height: 1.5; /* Improved readability */
+        }
         .success { border-color: green; background-color: #e6ffe6; color: green; }
         .error { border-color: red; background-color: #ffe6e6; color: red; }
         .info { border-color: blue; background-color: #e6f7ff; color: blue; }
         iframe { width:100%; height:400px; margin-top:20px; border: 1px solid black; }
         label { display: block; margin-top: 10px; }
-        #existingHerokuApp {font-style: italic; color: #555; font-size: 0.9em; margin-bottom:10px;}
+        input[type="text"] { width: 300px; padding: 8px; margin-bottom:15px; box-sizing: border-box;}
+        input[type="submit"], button { padding: 10px 15px; font-size: 1em; }
     </style>
 </head>
 <body>
-    <h1>Python App Deployer</h1>
-    <div id="existingHerokuApp"></div>
+    <h1>Deploy Python Application (to Local Docker)</h1>
+
     <form id="deployForm">
         <label for="git_url">Git Repository URL:</label>
-        <input type="text" id="git_url" name="git_url" size="50" required><br><br>
-        <label for="deploy_target">Deployment Target:</label>
-        <select id="deploy_target" name="deploy_target">
-            <option value="local" selected>Local Docker</option>
-            <option value="heroku">Heroku</option>
-        </select><br><br>
-        <input type="submit" value="Deploy / Update App">
+        <input type="text" id="git_url" name="git_url" size="50" required><br>
+        <!-- Removed Deployment Target dropdown -->
+        <input type="submit" value="Deploy App to Local Docker">
     </form>
+
     <button id="terminateButton" style="display:none; margin-top: 10px;">Terminate App</button>
+
     <div id="message"></div>
+
     <iframe id="deployedAppFrame" style="display:none;"></iframe>
+
     <script>
         const deployForm = document.getElementById("deployForm");
         const terminateButton = document.getElementById("terminateButton");
         const messageDiv = document.getElementById("message");
         const appFrame = document.getElementById("deployedAppFrame");
-        const existingHerokuDiv = document.getElementById("existingHerokuApp");
-        let currentDeployment = {}; // Stores {deployed_to, app_url, app_name}
 
-        // Use Jinja to inject initial Heroku app name if available from server context
-        const initialHerokuAppName = "{{ current_heroku_app_name or '' }}";
-        if (initialHerokuAppName) {
-            existingHerokuDiv.textContent = "Currently managing Heroku app: " + initialHerokuAppName;
-            currentDeployment.deployed_to = 'heroku'; // Assume if name is present, it's a heroku deployment
-            currentDeployment.app_name = initialHerokuAppName;
-            // app_url might not be available here, but app_name is key for update/terminate
-        }
+        // No longer need to store extensive currentDeployment info for Heroku
+        // We only need to know if an app (local) is active to show terminate button
+        let localAppActive = false;
 
         deployForm.addEventListener("submit", function(event) {
             event.preventDefault();
             const gitUrl = document.getElementById("git_url").value;
-            const deployTarget = document.getElementById("deploy_target").value;
 
-            messageDiv.textContent = "Deploying/Updating to " + deployTarget + "... please wait.";
+            messageDiv.textContent = "Deploying to Local Docker... please wait.";
             messageDiv.className = "info";
-            appFrame.style.display = "none"; appFrame.src = "about:blank";
+            appFrame.style.display = "none";
+            appFrame.src = "about:blank";
             terminateButton.style.display = "none";
-            // Don't reset currentDeployment fully here if target is Heroku and app name exists,
-            // because we might be updating it. Backend will confirm.
-            // However, if switching targets, it's good to clear.
-            if (deployTarget !== currentDeployment.deployed_to) {
-                 if (currentDeployment.deployed_to === 'heroku' && deployTarget === 'local') {
-                    // Keep heroku info for termination if user deployed to heroku then switches to local without terminating
-                 } else {
-                    currentDeployment = {};
-                 }
-            }
-
+            localAppActive = false;
 
             const formData = new URLSearchParams();
             formData.append("git_url", gitUrl);
-            formData.append("deploy_target", deployTarget);
+            // No deploy_target needed in formData
 
             fetch("/deploy", { method: "POST", body: formData })
             .then(response => response.json())
             .then(data => {
                 messageDiv.textContent = data.message;
-                messageDiv.className = data.status;
+                messageDiv.className = data.status; // Should be "success", "error", or "info"
                 if (data.status === "success") {
-                    currentDeployment = {
-                        deployed_to: data.deployed_to || deployTarget,
-                        app_url: data.app_url,
-                        app_name: data.app_name
-                    };
+                    localAppActive = true;
                     terminateButton.style.display = "block";
                     if(data.app_url) {
                         appFrame.src = data.app_url;
                         appFrame.style.display = "block";
-                    }
-                    if (data.deployed_to === "heroku" && data.app_name) {
-                        existingHerokuDiv.textContent = "Currently managing Heroku app: " + data.app_name;
-                    } else if (data.deployed_to !== "heroku" && currentDeployment.deployed_to !== 'heroku') {
-                        // Only clear if not previously managing a Heroku app that might still exist
-                        existingHerokuDiv.textContent = "";
-                    }
-                } else {
-                    // If deploy failed, but we were managing a heroku app, keep showing it.
-                    if (!(currentDeployment.deployed_to === 'heroku' && currentDeployment.app_name)) {
-                         existingHerokuDiv.textContent = "";
                     }
                 }
             })
             .catch(error => {
                 messageDiv.textContent = "Client-side error: " + error;
                 messageDiv.className = "error";
-                if (!(currentDeployment.deployed_to === 'heroku' && currentDeployment.app_name)) {
-                    existingHerokuDiv.textContent = "";
-                }
             });
         });
 
         terminateButton.addEventListener("click", function() {
-            if (!currentDeployment.deployed_to) {
-                messageDiv.textContent = "No active deployment information found to terminate.";
-                messageDiv.className = "error";
-                return;
-            }
-            messageDiv.textContent = "Terminating app on " + currentDeployment.deployed_to + (currentDeployment.app_name ? " ("+currentDeployment.app_name+")" : "") + "...";
+            messageDiv.textContent = "Terminating local app...";
             messageDiv.className = "info";
 
-            fetch("/terminate_app", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(currentDeployment)
-            })
+            // No need to send body for local-only termination as backend knows what to do
+            fetch("/terminate_app", { method: "POST" })
             .then(response => response.json())
             .then(data => {
                 messageDiv.textContent = data.message;
                 messageDiv.className = data.status;
                 terminateButton.style.display = "none";
-                appFrame.style.display = "none"; appFrame.src = "about:blank";
-                if (currentDeployment.deployed_to === "heroku" || data.status === "success" && currentDeployment.deployed_to === "heroku") {
-                    // Clear Heroku specific info on successful termination or if it was a Heroku deployment
-                    existingHerokuDiv.textContent = "";
-                }
-                currentDeployment = {}; // Clear deployment info
+                appFrame.style.display = "none";
+                appFrame.src = "about:blank";
+                localAppActive = false;
             })
             .catch(error => {
                 messageDiv.textContent = "Client-side error during termination: " + error;
