@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.orig
+.git
+.gitignore
+venv/
+temp_cloned_app/
+# Add other files/dirs not needed in the image, like README.md if it's large
+README.md
+Dockerfile
+Procfile
+# We don't want to copy a previous Dockerfile or Procfile into itself if ADD . or COPY . is used broadly
