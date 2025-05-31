@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*~
+.DS_Store
+venv/
+.env
+temp_cloned_app/
+CLONE_DIR/Dockerfile

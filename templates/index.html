@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python App Deployer (Local Docker)</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            max-height: 250px; /* Increased max-height slightly */
+            overflow-y: auto;
+            white-space: pre-wrap;
+            background-color: #f9f9f9;
+            line-height: 1.5; /* Improved readability */
+        }
+        .success { border-color: green; background-color: #e6ffe6; color: green; }
+        .error { border-color: red; background-color: #ffe6e6; color: red; }
+        .info { border-color: blue; background-color: #e6f7ff; color: blue; }
+        iframe { width:100%; height:400px; margin-top:20px; border: 1px solid black; }
+        label { display: block; margin-top: 10px; }
+        input[type="text"] { width: 300px; padding: 8px; margin-bottom:15px; box-sizing: border-box;}
+        input[type="submit"], button { padding: 10px 15px; font-size: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Deploy Python Application (to Local Docker)</h1>
+
+    <form id="deployForm">
+        <label for="git_url">Git Repository URL:</label>
+        <input type="text" id="git_url" name="git_url" size="50" required><br>
+        <!-- Removed Deployment Target dropdown -->
+        <input type="submit" value="Deploy App to Local Docker">
+    </form>
+
+    <button id="terminateButton" style="display:none; margin-top: 10px;">Terminate App</button>
+
+    <div id="message"></div>
+
+    <iframe id="deployedAppFrame" style="display:none;"></iframe>
+
+    <script>
+        const deployForm = document.getElementById("deployForm");
+        const terminateButton = document.getElementById("terminateButton");
+        const messageDiv = document.getElementById("message");
+        const appFrame = document.getElementById("deployedAppFrame");
+
+        // No longer need to store extensive currentDeployment info for Heroku
+        // We only need to know if an app (local) is active to show terminate button
+        let localAppActive = false;
+
+        deployForm.addEventListener("submit", function(event) {
+            event.preventDefault();
+            const gitUrl = document.getElementById("git_url").value;
+
+            messageDiv.textContent = "Deploying to Local Docker... please wait.";
+            messageDiv.className = "info";
+            appFrame.style.display = "none";
+            appFrame.src = "about:blank";
+            terminateButton.style.display = "none";
+            localAppActive = false;
+
+            const formData = new URLSearchParams();
+            formData.append("git_url", gitUrl);
+            // No deploy_target needed in formData
+
+            fetch("/deploy", { method: "POST", body: formData })
+            .then(response => response.json())
+            .then(data => {
+                messageDiv.textContent = data.message;
+                messageDiv.className = data.status; // Should be "success", "error", or "info"
+                if (data.status === "success") {
+                    localAppActive = true;
+                    terminateButton.style.display = "block";
+                    if(data.app_url) {
+                        appFrame.src = data.app_url;
+                        appFrame.style.display = "block";
+                    }
+                }
+            })
+            .catch(error => {
+                messageDiv.textContent = "Client-side error: " + error;
+                messageDiv.className = "error";
+            });
+        });
+
+        terminateButton.addEventListener("click", function() {
+            messageDiv.textContent = "Terminating local app...";
+            messageDiv.className = "info";
+
+            // No need to send body for local-only termination as backend knows what to do
+            fetch("/terminate_app", { method: "POST" })
+            .then(response => response.json())
+            .then(data => {
+                messageDiv.textContent = data.message;
+                messageDiv.className = data.status;
+                terminateButton.style.display = "none";
+                appFrame.style.display = "none";
+                appFrame.src = "about:blank";
+                localAppActive = false;
+            })
+            .catch(error => {
+                messageDiv.textContent = "Client-side error during termination: " + error;
+                messageDiv.className = "error";
+            });
+        });
+    </script>
+</body>
+</html>
