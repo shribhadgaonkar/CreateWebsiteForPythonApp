@@ -4,6 +4,7 @@ import os
 import shutil
 import sys # Keep for sys.exit if needed, though not currently used.
 import time
+import stat
 
 app = Flask(__name__)
 DEPLOYED_APP_PORT = 8080
@@ -18,6 +19,30 @@ def index():
 def stop_and_remove_local_container(container_name):
     subprocess.run(['docker', 'stop', container_name], capture_output=True, text=True)
     subprocess.run(['docker', 'rm', container_name], capture_output=True, text=True)
+
+def onerror(func, path, exc_info):
+    """
+    Error handler for shutil.rmtree.
+    If the error is a permission error, it attempts to change the file's
+    permissions and then reattempt the deletion.
+    """
+    # Check if the file exists and if it's a permission error related to write access
+    # S_IWUSR is for user write permission.
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        try:
+            os.chmod(path, stat.S_IWUSR)
+            func(path) # Reattempt the function that failed (e.g., os.unlink or os.rmdir)
+        except Exception as e:
+            print(f"onerror: Failed to change permission or retry {func.__name__} on {path}: {e}")
+            # If chmod or retry fails, let the original rmtree error propagate.
+            # This can be done by not handling the exception here, or by re-raising.
+            # For simplicity, we'll let rmtree decide if it can continue or if it should fail.
+    # It's important to handle other types of errors if needed, or to re-raise them.
+    # If func(path) above raises an error, it will propagate up to shutil.rmtree.
+    # If we want to ensure the original error from rmtree is raised if our handler fails:
+    # else:
+    #    if exc_info and exc_info[1]: # Check if exc_info is available and has an exception instance
+    #        raise exc_info[1] # Re-raise the original exception that rmtree caught
 
 def run_subprocess(command, step_name, cwd=None):
     """Helper function to run subprocesses and handle errors more uniformly."""
@@ -56,7 +81,9 @@ def deploy():
         # Clean up previous local deployment
         stop_and_remove_local_container(DOCKER_CONTAINER_NAME)
         if os.path.exists(CLONE_DIR):
-            shutil.rmtree(CLONE_DIR)
+            print(f"Attempting to remove existing directory: {CLONE_DIR}") # For debugging
+            shutil.rmtree(CLONE_DIR, onerror=onerror)
+            print(f"Successfully removed directory: {CLONE_DIR}") # For debugging
         os.makedirs(CLONE_DIR, exist_ok=True)
 
         try:
@@ -131,7 +158,9 @@ def terminate_app():
     # This route is now simplified for local-only termination
     stop_and_remove_local_container(DOCKER_CONTAINER_NAME)
     if os.path.exists(CLONE_DIR): # Clean up clone dir as well
-        shutil.rmtree(CLONE_DIR)
+        print(f"Attempting to remove directory during termination: {CLONE_DIR}") # For debugging
+        shutil.rmtree(CLONE_DIR, onerror=onerror)
+        print(f"Successfully removed directory during termination: {CLONE_DIR}") # For debugging
     return jsonify({'status': 'success', 'message': 'Local Dockerized app terminated and cleaned up.'})
 
 if __name__ == '__main__':
